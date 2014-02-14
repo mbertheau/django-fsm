@@ -37,13 +37,15 @@ class FSMMeta(object):
         self.field = field
         self.transitions = defaultdict()
         self.conditions = defaultdict()
+        self.checks = defaultdict()
 
-    def add_transition(self, source, target, conditions=[]):
+    def add_transition(self, source, target, conditions=[], checks=[]):
         if source in self.transitions:
             raise AssertionError('Duplicate transition for %s state' % source)
 
         self.transitions[source] = target
         self.conditions[source] = conditions
+        self.checks[source] = checks
 
     def _get_state_field(self, instance):
         """
@@ -95,6 +97,18 @@ class FSMMeta(object):
                 return True
         return False
 
+    def checks_met(self, instance, *args, **kwargs):
+        """
+        Check if all checks are met
+        """
+        state = self.current_state(instance)
+        if state not in self.checks:
+            state = '*'
+
+        if all(map(lambda f: f(instance, *args, **kwargs), self.checks[state])):
+                return True
+        return False
+
     def to_next_state(self, instance):
         """
         Switch to next state
@@ -106,7 +120,7 @@ class FSMMeta(object):
             instance.__dict__[field_name] = state
 
 
-def transition(field=None, source='*', target=None, save=False, conditions=[]):
+def transition(field=None, source='*', target=None, save=False, conditions=[], checks=[]):
     """
     Method decorator for mark allowed transition
 
@@ -124,7 +138,8 @@ def transition(field=None, source='*', target=None, save=False, conditions=[]):
             @wraps(func)
             def _change_state(instance, *args, **kwargs):
                 meta = func._django_fsm
-                if not (meta.has_transition(instance) and meta.conditions_met(instance, *args, **kwargs)):
+                if not (meta.has_transition(instance) and meta.conditions_met(instance, *args, **kwargs)
+                        and meta.checks_met(instance, *args, **kwargs)):
                     raise TransitionNotAllowed("Can't switch from state '%s' using method '%s'" % (meta.current_state(instance), func.__name__))
 
                 source_state = meta.current_state(instance)
@@ -154,9 +169,9 @@ def transition(field=None, source='*', target=None, save=False, conditions=[]):
 
         if isinstance(source, (list, tuple)):
             for state in source:
-                func._django_fsm.add_transition(state, target, conditions)
+                func._django_fsm.add_transition(state, target, conditions, checks)
         else:
-            func._django_fsm.add_transition(source, target, conditions)
+            func._django_fsm.add_transition(source, target, conditions, checks)
 
         if field:
             field.transitions.append(_change_state)
