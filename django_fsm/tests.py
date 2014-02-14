@@ -235,6 +235,37 @@ class ExplicitFSMFieldTest(TestCase):
                          ['approved', 'declined'])
 
 
+class ChecksAndConditionsModel(models.Model):
+    state = FSMField(default='new')
+    name = None
+
+    def is_complete(self):
+        return self.name is not None and len(self.name) > 0
+
+    @transition(field=state, source='new', target='published', checks=[is_complete])
+    def publish(self):
+        pass
+
+
+class CheckTest(TestCase):
+    def setUp(self):
+        self.model = ChecksAndConditionsModel()
+
+    def test_transition_with_failing_check(self):
+        # transition is available
+        self.assertEqual([t[0] for t in self.model.get_available_state_transitions()], ['published'])
+        # but it fails
+        self.assertRaises(TransitionNotAllowed, self.model.publish)
+
+        self.assertEqual(self.model.state, 'new')
+
+        # unless the check succeeds
+        self.model.name = 'A name'
+        self.model.publish()
+
+        self.assertEqual(self.model.state, 'published')
+
+
 class StateSignalsTests(TestCase):
     def setUp(self):
         self.model = BlogPost()
